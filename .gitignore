@@ -1,0 +1,9 @@
+# Windows executables
+*.exe
+
+# Compiled resources
+*.res
+
+# User-provided assets (optional, depending on workflow)
+# *.ico
+# *.png

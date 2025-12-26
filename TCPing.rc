@@ -1,0 +1,7 @@
+#include <windows.h>
+
+// 1 is the standard ID for an application manifest
+1 RT_MANIFEST "TCPing.manifest"
+
+// 101 is a custom ID for the application icon
+101 ICON "graph_info_statistics_direction_arrow_data_icon_267018.ico"
