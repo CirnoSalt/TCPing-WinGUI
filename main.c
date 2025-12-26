@@ -10,8 +10,8 @@
 #include <string.h>
 #include <time.h>
 #include <commctrl.h>
-#include <richedit.h> // For RichEdit controls
-#include <windowsx.h> // For GET_X_LPARAM, GET_Y_LPARAM
+// #include <richedit.h> // 不再需要
+#include <windowsx.h> 
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -23,11 +23,8 @@
 #define IDC_STARTBUTTON    105
 #define IDC_STOPBUTTON     106
 
-// 右键菜单ID
 #define ID_MENU_COPY       107
 #define ID_MENU_SELECT_ALL 108
-
-// 图标ID
 #define IDI_APPICON        101
 
 // 自定义消息
@@ -40,14 +37,9 @@ HFONT hFont = NULL;
 HFONT hFontBold = NULL;
 volatile int g_running = 0;
 
-// 定义一个结构体用于在线程间传递统计数据
 typedef struct _PingStats {
-    int pingCount;
-    int successCount;
-    int failCount;
-    double totalTime;
-    double minTime;
-    double maxTime;
+    int pingCount, successCount, failCount;
+    double totalTime, minTime, maxTime;
     int maxPingLimit;
 } PingStats;
 
@@ -62,14 +54,9 @@ int TCPPing(const wchar_t* host, int port, double* elapsed);
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        MessageBoxW(NULL, L"Winsock初始化失败", L"错误", MB_ICONERROR);
-        return 1;
-    }
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-    INITCOMMONCONTROLSEX icex;
-    icex.dwSize = sizeof(icex);
-    icex.dwICC = ICC_WIN95_CLASSES;
+    INITCOMMONCONTROLSEX icex = { .dwSize = sizeof(icex), .dwICC = ICC_WIN95_CLASSES };
     InitCommonControlsEx(&icex);
 
     WNDCLASSEXW wc = {0};
@@ -81,25 +68,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.lpszClassName = L"TCPingWindowClass";
     wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCE(IDI_APPICON));
     wc.hIconSm = LoadIconW(hInstance, MAKEINTRESOURCE(IDI_APPICON));
-    if (!RegisterClassExW(&wc)) {
-        MessageBoxW(NULL, L"窗口类注册失败", L"错误", MB_ICONERROR);
-        WSACleanup();
-        return 1;
-    }
+    RegisterClassExW(&wc);
 
     HWND hwnd = CreateWindowExW(
         0, L"TCPingWindowClass", L"TCP Ping 工具",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 800, 650,
         NULL, NULL, hInstance, NULL
     );
-    if (!hwnd) {
-        MessageBoxW(NULL, L"窗口创建失败", L"错误", MB_ICONERROR);
-        WSACleanup();
-        return 1;
-    }
 
-    LoadLibrary(L"msftedit.dll");
+    //不再需要加载RichEdit库
+    // LoadLibrary(L"msftedit.dll");
 
     NONCLIENTMETRICSW ncm = {0};
     ncm.cbSize = sizeof(NONCLIENTMETRICSW);
@@ -113,32 +92,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ncm.lfMessageFont.lfWeight = FW_BOLD;
     hFontBold = CreateFontIndirectW(&ncm.lfMessageFont);
 
-    HWND hGroupSettings = CreateWindowW(L"Button", L"参数设置", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 15, 15, 760, 140, hwnd, NULL, hInstance, NULL);
-    
-    HWND hStaticIp = CreateWindowW(L"Static", L"IP/域名:", WS_CHILD | WS_VISIBLE | SS_LEFT, 40, 45, 100, 35, hwnd, NULL, hInstance, NULL);
+    // --- UI布局 ---
+    CreateWindowW(L"Button", L"参数设置", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 15, 15, 760, 140, hwnd, NULL, hInstance, NULL);
+    CreateWindowW(L"Static", L"IP/域名:", WS_CHILD | WS_VISIBLE | SS_LEFT, 40, 45, 100, 35, hwnd, NULL, hInstance, NULL);
     hIpEdit = CreateWindowW(L"Edit", L"360.com", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 150, 45, 250, 35, hwnd, (HMENU)IDC_IPEDIT, hInstance, NULL);
-    
-    HWND hStaticPort = CreateWindowW(L"Static", L"端口:", WS_CHILD | WS_VISIBLE | SS_LEFT, 40, 90, 100, 35, hwnd, NULL, hInstance, NULL);
+    CreateWindowW(L"Static", L"端口:", WS_CHILD | WS_VISIBLE | SS_LEFT, 40, 90, 100, 35, hwnd, NULL, hInstance, NULL);
     hPortEdit = CreateWindowW(L"Edit", L"80", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 150, 90, 80, 35, hwnd, (HMENU)IDC_PORTEDIT, hInstance, NULL);
-    
-    HWND hStaticCount = CreateWindowW(L"Static", L"次数:", WS_CHILD | WS_VISIBLE | SS_LEFT, 260, 90, 80, 35, hwnd, NULL, hInstance, NULL);
+    CreateWindowW(L"Static", L"次数:", WS_CHILD | WS_VISIBLE | SS_LEFT, 260, 90, 80, 35, hwnd, NULL, hInstance, NULL);
     hCountEdit = CreateWindowW(L"Edit", L"4", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER, 410, 90, 80, 35, hwnd, (HMENU)IDC_COUNTEDIT, hInstance, NULL);
-    
     hStartButton = CreateWindowW(L"Button", L"开始", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, 550, 42, 180, 40, hwnd, (HMENU)IDC_STARTBUTTON, hInstance, NULL);
     hStopButton = CreateWindowW(L"Button", L"停止", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED, 550, 88, 180, 40, hwnd, (HMENU)IDC_STOPBUTTON, hInstance, NULL);
+    CreateWindowW(L"Button", L"日志输出", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 15, 165, 760, 420, hwnd, NULL, hInstance, NULL);
     
-    HWND hGroupLog = CreateWindowW(L"Button", L"日志输出", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 15, 165, 760, 420, hwnd, NULL, hInstance, NULL);
-    hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, MSFTEDIT_CLASS, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY, 30, 195, 730, 375, hwnd, (HMENU)IDC_LOGEDIT, hInstance, NULL);
+    // 使用标准的EDIT控件
+    hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY, 30, 195, 730, 375, hwnd, (HMENU)IDC_LOGEDIT, hInstance, NULL);
 
-    // 给所有子控件设置字体
     for (HWND hChild = GetTopWindow(hwnd); hChild != NULL; hChild = GetNextWindow(hChild, GW_HWNDNEXT)) {
         SendMessage(hChild, WM_SETFONT, (WPARAM)hFont, TRUE);
     }
     SendMessage(hStartButton, WM_SETFONT, (WPARAM)hFontBold, TRUE);
     SendMessage(hStopButton, WM_SETFONT, (WPARAM)hFontBold, TRUE);
 
-    SendMessageW(hLogEdit, EM_SETLIMITTEXT, 0, 0);
-    SendMessageW(hLogEdit, EM_SETBKGNDCOLOR, 0, RGB(255, 255, 255));
+    SendMessageW(hLogEdit, EM_SETLIMITTEXT, 0, 0); // 对标准EDIT控件也有效
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
@@ -157,32 +132,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_COMMAND: {
             int wmId = LOWORD(wParam);
+            int wmEvent = HIWORD(wParam);
+
+            // "暴力"重绘修复: 如果日志框更新或滚动，则强制重绘整个窗口以清除视觉残留
+            if (wmId == IDC_LOGEDIT && (wmEvent == EN_UPDATE || wmEvent == EN_VSCROLL)) {
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+
             // 处理菜单和按钮点击
             switch(wmId) {
-                case IDC_STARTBUTTON:
-                    StartPing();
-                    break;
-                case IDC_STOPBUTTON:
-                    StopPing();
-                    break;
-                case ID_MENU_COPY:
-                    SendMessage(hLogEdit, WM_COPY, 0, 0);
-                    break;
-                case ID_MENU_SELECT_ALL:
-                    SendMessage(hLogEdit, EM_SETSEL, 0, -1);
-                    break;
+                case IDC_STARTBUTTON: StartPing(); break;
+                case IDC_STOPBUTTON: StopPing(); break;
+                case ID_MENU_COPY: SendMessage(hLogEdit, WM_COPY, 0, 0); break;
+                case ID_MENU_SELECT_ALL: SendMessage(hLogEdit, EM_SETSEL, 0, -1); break;
             }
             break;
         }
         case WM_CONTEXTMENU: {
-            // 为日志框创建右键菜单
             if ((HWND)wParam == hLogEdit) {
                 HMENU hMenu = CreatePopupMenu();
                 AppendMenuW(hMenu, MF_STRING, ID_MENU_COPY, L"复制");
                 AppendMenuW(hMenu, MF_STRING, ID_MENU_SELECT_ALL, L"全选");
                 
-                // 如果没有选中文本，则禁用复制
-                long start, end;
+                // 使用 EM_GETSEL 兼容标准EDIT控件
+                DWORD start, end;
                 SendMessage(hLogEdit, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
                 if (start == end) {
                     EnableMenuItem(hMenu, ID_MENU_COPY, MF_BYCOMMAND | MF_GRAYED);
@@ -193,9 +166,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
-        case WM_CTLCOLORSTATIC:
-            SetBkMode((HDC)wParam, TRANSPARENT);
-            return (LRESULT)GetStockObject(NULL_BRUSH);
         case WM_PING_COMPLETE:
             PingThreadCleanup((PingStats*)lParam);
             break;
@@ -230,12 +200,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 void AppendLog(const wchar_t* text) {
     size_t textLen = wcslen(text);
-    size_t bufferLen = textLen + 3; // For \r\n and null terminator
+    size_t bufferLen = textLen + 3; // For \r\n
     wchar_t* buffer = (wchar_t*)malloc(bufferLen * sizeof(wchar_t));
     if (buffer) {
         wcscpy_s(buffer, bufferLen, text);
         wcscat_s(buffer, bufferLen, L"\r\n");
-        // Post message to UI thread to append the text
         PostMessageW(GetParent(hLogEdit), WM_APPEND_LOG, 0, (LPARAM)buffer);
     }
 }
@@ -254,9 +223,6 @@ void StartPing() {
     
     int port = _wtoi(portStr);
     int maxPingLimit = _wtoi(countStr);
-    if (maxPingLimit == 0) {
-        maxPingLimit = -1; // 如果输入为0，则视为无限次ping
-    }
     
     if (wcslen(ip) == 0 || port <= 0 || port > 65535) {
         MessageBoxW(NULL, L"请输入有效的IP和端口（1-65535）", L"错误", MB_ICONERROR);
@@ -269,15 +235,11 @@ void StartPing() {
     
     PingStats* initialStats = (PingStats*)malloc(sizeof(PingStats));
     if (!initialStats) return;
-    *initialStats = (PingStats){0}; // Zero-initialize
+    *initialStats = (PingStats){0};
     initialStats->minTime = 999999.0;
     initialStats->maxPingLimit = maxPingLimit;
 
-    struct PingParams {
-        wchar_t host[256];
-        int port;
-        PingStats* stats;
-    };
+    struct PingParams { wchar_t host[256]; int port; PingStats* stats; };
     struct PingParams* params = (struct PingParams*)malloc(sizeof(struct PingParams));
     if(!params) { free(initialStats); return; }
 
@@ -308,36 +270,42 @@ void StopPing() {
 }
 
 void PingThreadCleanup(PingStats* finalStats) {
-    g_running = 0; // 重置运行状态，允许下一次开始
+    g_running = 0;
     EnableWindow(hStartButton, TRUE);
-    EnableWindow(hStopButton, FALSE); // 确保停止按钮在清理时总是被禁用
+    EnableWindow(hStopButton, FALSE);
 
-    wchar_t statsMsg[512];
+    wchar_t lineBuffer[512];
+
+    AppendLog(L"");
+    AppendLog(L"Ping 统计信息:");
+    
     if (finalStats->pingCount > 0) {
-        _snwprintf(statsMsg, sizeof(statsMsg)/sizeof(statsMsg[0]),
-            L"\nPing 统计信息:\n"
-            L"    数据包: 已发送 = %d, 已接收 = %d, 丢失 = %d (%.0f%% 丢失)\n"
-            L"往返行程的估计时间(以毫秒为单位):\n"
-            L"    最短 = %.0fms, 最长 = %.0fms, 平均 = %.0fms",
+        _snwprintf(lineBuffer, sizeof(lineBuffer)/sizeof(lineBuffer[0]),
+            L"    数据包: 已发送 = %d, 已接收 = %d, 丢失 = %d (%.0f%% 丢失)",
             finalStats->pingCount, finalStats->successCount, finalStats->failCount, 
-            (finalStats->pingCount > 0) ? (finalStats->failCount * 100.0 / finalStats->pingCount) : 0,
+            (finalStats->pingCount > 0) ? (finalStats->failCount * 100.0 / finalStats->pingCount) : 0);
+        AppendLog(lineBuffer);
+
+        _snwprintf(lineBuffer, sizeof(lineBuffer)/sizeof(lineBuffer[0]),
+            L"往返行程的估计时间(以毫秒为单位):");
+        AppendLog(lineBuffer);
+        
+        _snwprintf(lineBuffer, sizeof(lineBuffer)/sizeof(lineBuffer[0]),
+            L"    最短 = %.0fms, 最长 = %.0fms, 平均 = %.0fms",
             finalStats->minTime == 999999.0 ? 0 : finalStats->minTime, finalStats->maxTime, 
             (finalStats->successCount > 0) ? (finalStats->totalTime / finalStats->successCount) : 0);
+        AppendLog(lineBuffer);
+
     } else {
-        wcscpy_s(statsMsg, sizeof(statsMsg)/sizeof(statsMsg[0]), L"\nPing 已停止。\n");
+        wcscpy_s(lineBuffer, sizeof(lineBuffer)/sizeof(lineBuffer[0]), L"    Ping 已停止。");
+        AppendLog(lineBuffer);
     }
-    AppendLog(statsMsg);
     
     free(finalStats);
 }
 
-
 DWORD WINAPI PingThread(LPVOID lpParam) {
-    struct PingParams {
-        wchar_t host[256];
-        int port;
-        PingStats* stats;
-    };
+    struct PingParams { wchar_t host[256]; int port; PingStats* stats; };
     struct PingParams* params = (struct PingParams*)lpParam;
     
     wchar_t host[256];
@@ -346,7 +314,7 @@ DWORD WINAPI PingThread(LPVOID lpParam) {
     PingStats* currentStats = params->stats;
     free(params);
 
-    while (g_running && (currentStats->maxPingLimit == -1 || currentStats->pingCount < currentStats->maxPingLimit)) {
+    while (g_running && (currentStats->maxPingLimit == 0 || currentStats->pingCount < currentStats->maxPingLimit)) {
         double elapsed;
         int result = TCPPing(host, port, &elapsed);
         
@@ -384,9 +352,7 @@ int TCPPing(const wchar_t* host, int port, double* elapsed) {
     QueryPerformanceFrequency(&frequency);
 
     sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        return -1;
-    }
+    if (sock == INVALID_SOCKET) return -1;
     
     DWORD timeout = 2000;
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
@@ -414,9 +380,7 @@ int TCPPing(const wchar_t* host, int port, double* elapsed) {
     
     closesocket(sock);
     
-    if (connResult == SOCKET_ERROR) {
-        return -1;
-    }
+    if (connResult == SOCKET_ERROR) return -1;
     
     *elapsed = (double)(end.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
     return 0;
